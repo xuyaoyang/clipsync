@@ -1,0 +1,22 @@
+{
+  "name": "ClipSync — 局域网同步",
+  "short_name": "ClipSync",
+  "description": "局域网跨设备剪贴板同步工具",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F0F7FF",
+  "theme_color": "#87CEEB",
+  "icons": [
+    {
+      "src": "assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
