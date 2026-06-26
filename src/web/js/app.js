@@ -210,16 +210,19 @@ const App = (() => {
 
     WSClient.on('pending_device_removed', (data) => {
       DeviceManager.onPendingDeviceRemoved(data.deviceId);
+      DeviceManager.loadPeers();
     });
 
     // 设备上线/下线
     WSClient.on('device_online', () => {
       loadItems();
       DeviceManager.loadAuthorized();
+      DeviceManager.loadPeers();
     });
     WSClient.on('device_offline', () => {
       loadItems();
       DeviceManager.loadAuthorized();
+      DeviceManager.loadPeers();
     });
   }
 

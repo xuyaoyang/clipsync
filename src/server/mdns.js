@@ -7,7 +7,7 @@ let service = null;
 let browser = null;
 
 // 启动 mDNS 服务广播
-function startBroadcast(port) {
+function startBroadcast(port, options = {}) {
   try {
     instance = bonjour();
 
@@ -19,7 +19,8 @@ function startBroadcast(port) {
       txt: {
         version: '1.0.0',
         platform: process.platform,
-        hostname: os.hostname()
+        hostname: os.hostname(),
+        deviceId: options.deviceId || ''
       }
     });
 

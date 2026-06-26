@@ -359,6 +359,30 @@ function createApp(uploadDir) {
     }
   });
 
+  // 获取局域网电脑互联状态
+  app.get('/api/peers', (req, res) => {
+    try {
+      const peers = require('./peers');
+      res.json({ peers: peers.listPeers() });
+    } catch (e) {
+      res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: e.message } });
+    }
+  });
+
+  // 手动重连指定电脑
+  app.post('/api/peers/:id/reconnect', (req, res) => {
+    try {
+      const peers = require('./peers');
+      const success = peers.reconnectPeer(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: '未发现该电脑' } });
+      }
+      res.json({ success: true });
+    } catch (e) {
+      res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: e.message } });
+    }
+  });
+
   // 生成二维码（SVG 格式，方便手机扫码连接）
   app.get('/api/qrcode', async (req, res) => {
     try {

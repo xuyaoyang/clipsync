@@ -5,6 +5,7 @@ const database = require('../database');
 const { start: startHTTP } = require('./http-server');
 const websocket = require('./websocket');
 const mdns = require('./mdns');
+const peers = require('./peers');
 
 const PORT = process.env.PORT || 9527;
 const CLEAN_INTERVAL = 60 * 1000;
@@ -24,6 +25,7 @@ async function init(options = {}) {
   const dataDir = options.dataDir || path.join(__dirname, '..', '..', 'data');
   database.init(dataDir);
   console.log('[Init] 数据库已初始化:', dataDir);
+  const serverDeviceId = database.getSetting('server_device_id');
 
   const result = database.cleanExpired();
   if (result.deleted > 0) {
@@ -50,14 +52,17 @@ async function init(options = {}) {
   };
 
   // 5. mDNS
-  mdns.startBroadcast(actualPort);
+  mdns.startBroadcast(actualPort, { deviceId: serverDeviceId });
 
-  // 6. 定时清理
+  // 6. 电脑互联：发现同网 ClipSync 电脑并自动同步
+  peers.init({ app, uploadDir, port: actualPort, deviceId: serverDeviceId });
+
+  // 7. 定时清理
   cleanTimer = setInterval(() => {
     database.cleanExpired();
   }, CLEAN_INTERVAL);
 
-  // 7. 显示地址
+  // 8. 显示地址
   const localIP = mdns.getPrimaryIP();
   console.log('');
   console.log('  📡 服务已启动！');

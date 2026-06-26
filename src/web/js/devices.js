@@ -103,7 +103,7 @@ const DeviceManager = (() => {
   async function openPanel() {
     document.getElementById('deviceOverlay').hidden = false;
     document.getElementById('devicePanel').hidden = false;
-    await Promise.all([loadAuthorized(), loadPending()]);
+    await Promise.all([loadAuthorized(), loadPending(), loadPeers()]);
     updateLocalInfo();
   }
 
@@ -191,6 +191,43 @@ const DeviceManager = (() => {
     }
   }
 
+  async function loadPeers() {
+    const container = document.getElementById('peerList');
+    if (!container) return;
+
+    try {
+      const data = await API.getPeers();
+      if (data.peers && data.peers.length > 0) {
+        container.innerHTML = data.peers.map(peer => `
+          <div class="device-entry peer-entry">
+            <div class="device-info">
+              <span class="device-name">${escape(peer.name)}</span>
+              <span class="device-meta">${escape(peer.host || '-')}:${escape(String(peer.port || '-'))} · ${formatPeerStatus(peer.status)} · 最后在线: ${formatLastSeen(peer.last_seen_at)}</span>
+            </div>
+            <button class="btn-reconnect" data-id="${escape(peer.id)}">重连</button>
+          </div>
+        `).join('');
+
+        container.querySelectorAll('.btn-reconnect').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            try {
+              await API.reconnectPeer(btn.dataset.id);
+              UI.showToast('已尝试重新连接');
+              loadPeers();
+            } catch (e) {
+              UI.showToast('重连失败: ' + e.message);
+            }
+          });
+        });
+      } else {
+        container.innerHTML = '<p class="panel-hint">暂无发现的电脑</p>';
+      }
+    } catch (e) {
+      console.error('加载电脑互联列表失败:', e);
+      container.innerHTML = '<p class="panel-hint">加载失败</p>';
+    }
+  }
+
   // 收到 WebSocket 新待审批设备通知
   function onPendingDevice(device) {
     if (!pendingDeviceIds.has(device.deviceId)) {
@@ -250,6 +287,7 @@ const DeviceManager = (() => {
       updateBadge();
       loadPending();
       loadAuthorized();
+      loadPeers();
     } catch (e) {
       UI.showToast('审批失败: ' + e.message);
     }
@@ -295,5 +333,18 @@ const DeviceManager = (() => {
     return Math.floor(diff / 86400000) + ' 天前';
   }
 
-  return { init, onPendingDevice, onPendingDeviceRemoved, loadAuthorized, loadPending };
+  function formatPeerStatus(status) {
+    const map = {
+      discovered: '已发现',
+      pending: '待审批',
+      connecting: '连接中',
+      connected: '已连接',
+      offline: '离线',
+      rejected: '已拒绝',
+      error: '异常'
+    };
+    return map[status] || status || '未知';
+  }
+
+  return { init, onPendingDevice, onPendingDeviceRemoved, loadAuthorized, loadPending, loadPeers };
 })();

@@ -104,7 +104,39 @@ interface PendingDevice {
 
 ---
 
-## 4. 客户端本地存储
+## 4. PeerConnection（局域网电脑互联）
+
+```typescript
+interface PeerConnection {
+  id: string;          // 远程电脑稳定服务 ID
+  name: string;        // 远程电脑名称
+  host: string;        // 局域网 IP
+  port: number;        // ClipSync 服务端口
+  token: string;       // 连接远程电脑使用的授权 Token，仅服务端内部使用
+  status: 'discovered' | 'pending' | 'connecting' | 'connected' | 'offline' | 'rejected' | 'error';
+  lastSeenAt: number;
+  updatedAt: number;
+}
+```
+
+### 数据库表结构
+
+```sql
+CREATE TABLE IF NOT EXISTS peer_connections (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  host TEXT,
+  port INTEGER,
+  token TEXT,
+  status TEXT NOT NULL DEFAULT 'discovered',
+  last_seen_at INTEGER,
+  updated_at INTEGER NOT NULL
+);
+```
+
+---
+
+## 5. 客户端本地存储
 
 移动端浏览器使用 localStorage 存储：
 
@@ -118,7 +150,7 @@ interface PendingDevice {
 
 ---
 
-## 5. 文件存储规范
+## 6. 文件存储规范
 
 - 图片/文件存储在 `data/files/<item-id>/` 目录下
 - 保留原始文件名

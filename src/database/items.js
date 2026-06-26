@@ -22,6 +22,15 @@ function mapRows(rows) {
   return (rows || []).map(mapRow);
 }
 
+function rowFromId(id) {
+  const db = getDB();
+  return db.prepare('SELECT * FROM items WHERE id = ?').get(id);
+}
+
+function exists(id) {
+  return !!rowFromId(id);
+}
+
 // 创建内容
 function create({ type, content, fileName, fileSize, mimeType, filePath, sourceDevice }) {
   const db = getDB();
@@ -38,6 +47,33 @@ function create({ type, content, fileName, fileSize, mimeType, filePath, sourceD
            mimeType || null, filePath || null, now, expiresAt, sourceDevice);
 
   return mapRow(db.prepare('SELECT * FROM items WHERE id = ?').get(id));
+}
+
+// 插入远程同步内容，保留原始 ID 和过期时间，用于跨电脑去重
+function createSynced({ id, type, content, fileName, fileSize, mimeType, filePath, createdAt, expiresAt, sourceDevice }) {
+  const db = getDB();
+  if (!id) throw new Error('同步内容缺少 id');
+  if (exists(id)) return mapRow(rowFromId(id));
+
+  const stmt = db.prepare(`
+    INSERT INTO items (id, type, content, file_name, file_size, mime_type, file_path, created_at, expires_at, source_device)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  stmt.run(
+    id,
+    type,
+    content || null,
+    fileName || null,
+    fileSize || null,
+    mimeType || null,
+    filePath || null,
+    createdAt || Date.now(),
+    expiresAt || Date.now() + 24 * 60 * 60 * 1000,
+    sourceDevice || '远程电脑'
+  );
+
+  return mapRow(rowFromId(id));
 }
 
 // 获取单条内容（外部调用时返回 mapped row）
@@ -119,4 +155,4 @@ function getChanges(since) {
   return { newItems: mapRows(newItems), serverTime: now };
 }
 
-module.exports = { create, getById, getFileById, getList, remove, getChanges };
+module.exports = { create, createSynced, exists, getById, getFileById, getList, remove, getChanges };

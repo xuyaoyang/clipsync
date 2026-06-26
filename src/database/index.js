@@ -2,6 +2,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
 
 let db = null;
 
@@ -58,6 +59,20 @@ function init(dbPath) {
     CREATE INDEX IF NOT EXISTS idx_devices_token ON authorized_devices(token);
   `);
 
+  // 创建电脑互联表（保存远程电脑连接信息和授权 token）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS peer_connections (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      host TEXT,
+      port INTEGER,
+      token TEXT,
+      status TEXT NOT NULL DEFAULT 'discovered',
+      last_seen_at INTEGER,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+
   // 创建配置表（存储主密钥等持久化数据）
   db.exec(`
     CREATE TABLE IF NOT EXISTS settings (
@@ -73,6 +88,13 @@ function init(dbPath) {
     const masterKey = generateMasterKey();
     db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('master_key', masterKey.toString('base64'));
     console.log('[DB] 已生成主加密密钥');
+  }
+
+  // 每台服务端电脑拥有稳定 ID，用于 mDNS 发现和电脑互联授权
+  const existingDeviceId = db.prepare('SELECT value FROM settings WHERE key = ?').get('server_device_id');
+  if (!existingDeviceId) {
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('server_device_id', uuidv4());
+    console.log('[DB] 已生成本机服务 ID');
   }
 
   console.log('[DB] 数据库初始化完成:', dbFile);
@@ -99,6 +121,20 @@ function getMasterKey() {
   if (!db) throw new Error('数据库未初始化');
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('master_key');
   return row ? Buffer.from(row.value, 'base64') : null;
+}
+
+function getSetting(key) {
+  if (!db) throw new Error('数据库未初始化');
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return row ? row.value : null;
+}
+
+function setSetting(key, value) {
+  if (!db) throw new Error('数据库未初始化');
+  db.prepare(`
+    INSERT INTO settings (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(key, value);
 }
 
 // 清理过期内容（删除数据库记录和关联文件）
@@ -145,4 +181,4 @@ function cleanExpired() {
   return { deleted: result.changes, files: deletedFiles };
 }
 
-module.exports = { init, getDB, close, cleanExpired, getMasterKey };
+module.exports = { init, getDB, close, cleanExpired, getMasterKey, getSetting, setSetting };

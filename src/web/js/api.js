@@ -138,6 +138,14 @@ const API = (() => {
     return request('GET', '/devices/pending');
   }
 
+  async function getPeers() {
+    return request('GET', '/peers');
+  }
+
+  async function reconnectPeer(id) {
+    return request('POST', '/peers/' + id + '/reconnect');
+  }
+
   // 获取二维码
   async function requestQRCode() {
     const token = localStorage.getItem('token');
@@ -152,5 +160,5 @@ const API = (() => {
     return request('POST', '/open-folder');
   }
 
-  return { getItems, createText, uploadFile, getFileURL, sync, getDevices, removeDevice, approveDevice, getPendingDevices, requestQRCode, openFolder };
+  return { getItems, createText, uploadFile, getFileURL, sync, getDevices, removeDevice, approveDevice, getPendingDevices, getPeers, reconnectPeer, requestQRCode, openFolder };
 })();

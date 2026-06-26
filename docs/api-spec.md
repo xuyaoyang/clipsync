@@ -216,7 +216,45 @@ DELETE /api/devices/:id
 
 ---
 
-## 4. 错误响应格式
+## 4. 电脑互联接口
+
+### 4.1 获取局域网电脑状态
+
+```
+GET /api/peers
+```
+
+**成功响应 (200)：**
+```json
+{
+  "peers": [
+    {
+      "id": "server-device-id",
+      "name": "DESKTOP-ABC",
+      "host": "192.168.1.20",
+      "port": 9527,
+      "status": "connected",
+      "last_seen_at": 1716998400000,
+      "updated_at": 1716998400000
+    }
+  ]
+}
+```
+
+### 4.2 手动重连电脑
+
+```
+POST /api/peers/:id/reconnect
+```
+
+**成功响应 (200)：**
+```json
+{ "success": true }
+```
+
+---
+
+## 5. 错误响应格式
 
 ```json
 {

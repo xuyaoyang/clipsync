@@ -528,6 +528,26 @@ body {
   color: #fff;
 }
 
+.peer-entry {
+  align-items: flex-start;
+}
+
+.btn-reconnect {
+  padding: 4px 12px;
+  border: 1px solid var(--btn-primary);
+  background: #fff;
+  color: var(--btn-primary);
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-reconnect:hover {
+  background: var(--btn-primary);
+  color: #fff;
+}
+
 /* 待审批设备 */
 .pending-entry {
   display: flex;
