@@ -9,4 +9,5 @@
 *.jpeg binary
 *.ico binary
 *.zip binary
+*.rar binary
 *.pdf binary

@@ -8,8 +8,10 @@ let wss = null;
 let masterKey = null; // 缓存主密钥
 // 已连接客户端映射: deviceId -> { ws, deviceName, platform }
 const clients = new Map();
-// 待审批队列
-const pendingDevices = [];
+// 待审批队列: deviceId -> pending 记录
+const pendingDevices = new Map();
+const PENDING_TTL = 5 * 60 * 1000;
+let pendingCleanupTimer = null;
 
 function getMasterKeyCached() {
   if (!masterKey) {
@@ -20,6 +22,10 @@ function getMasterKeyCached() {
 
 function init(httpServer) {
   wss = new WebSocketServer({ server: httpServer, path: '/api/connect' });
+
+  if (!pendingCleanupTimer) {
+    pendingCleanupTimer = setInterval(cleanupPendingDevices, 60 * 1000);
+  }
 
   wss.on('connection', (ws, req) => {
     const params = url.parse(req.url, true).query;
@@ -56,9 +62,34 @@ function init(httpServer) {
       acceptConnection(ws, deviceId, name, platform, pubkey);
     } else {
       // 未授权设备，加入待审批队列
-      pendingDevices.push({
-        ws, deviceId, name: name || '未知设备', platform: platform || 'other',
-        ipAddress: req.socket.remoteAddress, pubkey
+      cleanupPendingDevices();
+
+      const existing = pendingDevices.get(deviceId);
+      if (existing && existing.ws !== ws) {
+        try { existing.ws.close(); } catch (e) { /* ignore */ }
+      }
+
+      const pending = {
+        ws,
+        deviceId,
+        name: name || '未知设备',
+        platform: platform || 'other',
+        ipAddress: req.socket.remoteAddress,
+        pubkey,
+        requestedAt: existing ? existing.requestedAt : Date.now()
+      };
+      pendingDevices.set(deviceId, pending);
+
+      ws.on('close', () => {
+        const current = pendingDevices.get(deviceId);
+        if (current && current.ws === ws) {
+          pendingDevices.delete(deviceId);
+          broadcastToAuthorized({
+            type: 'pending_device_removed',
+            payload: { deviceId },
+            timestamp: Date.now()
+          });
+        }
       });
 
       ws.send(JSON.stringify({
@@ -71,7 +102,8 @@ function init(httpServer) {
         deviceId,
         name: name || '未知设备',
         platform: platform || 'other',
-        ipAddress: req.socket.remoteAddress
+        ipAddress: req.socket.remoteAddress,
+        requestedAt: pending.requestedAt
       };
 
       console.log(`[WS] 新设备请求连接: ${name} (${platform}) [${deviceId}]`);
@@ -212,6 +244,32 @@ function notifyNewItem(item) {
   }
 }
 
+function cleanupPendingDevices() {
+  const now = Date.now();
+  for (const [deviceId, pending] of pendingDevices) {
+    const expired = now - pending.requestedAt > PENDING_TTL;
+    const closed = pending.ws.readyState !== 0 && pending.ws.readyState !== 1;
+    if (expired || closed) {
+      pendingDevices.delete(deviceId);
+      if (expired && pending.ws.readyState === 1) {
+        try {
+          pending.ws.send(JSON.stringify({
+            type: 'auth_rejected',
+            payload: { message: '连接请求已超时，请重新连接' },
+            timestamp: Date.now()
+          }));
+        } catch (e) { /* ignore */ }
+      }
+      try { pending.ws.close(); } catch (e) { /* ignore */ }
+      broadcastToAuthorized({
+        type: 'pending_device_removed',
+        payload: { deviceId },
+        timestamp: Date.now()
+      });
+    }
+  }
+}
+
 function notifyItemDeleted(itemId) {
   broadcast({
     type: 'item_deleted',
@@ -221,11 +279,20 @@ function notifyItemDeleted(itemId) {
 }
 
 function approveDevice(deviceId) {
-  const idx = pendingDevices.findIndex(d => d.deviceId === deviceId);
-  if (idx === -1) return false;
+  cleanupPendingDevices();
 
-  const pending = pendingDevices[idx];
-  pendingDevices.splice(idx, 1);
+  const pending = pendingDevices.get(deviceId);
+  if (!pending) return false;
+  if (pending.ws.readyState !== 1) {
+    pendingDevices.delete(deviceId);
+    broadcastToAuthorized({
+      type: 'pending_device_removed',
+      payload: { deviceId },
+      timestamp: Date.now()
+    });
+    return false;
+  }
+  pendingDevices.delete(deviceId);
 
   const result = devicesDB.addDevice({
     id: pending.deviceId,
@@ -240,34 +307,47 @@ function approveDevice(deviceId) {
   }));
 
   acceptConnection(pending.ws, pending.deviceId, pending.name, pending.platform, pending.pubkey);
+  broadcastToAuthorized({
+    type: 'pending_device_removed',
+    payload: { deviceId },
+    timestamp: Date.now()
+  });
 
   return true;
 }
 
 function rejectDevice(deviceId) {
-  const idx = pendingDevices.findIndex(d => d.deviceId === deviceId);
-  if (idx === -1) return false;
+  cleanupPendingDevices();
 
-  const pending = pendingDevices[idx];
-  pendingDevices.splice(idx, 1);
+  const pending = pendingDevices.get(deviceId);
+  if (!pending) return false;
+  pendingDevices.delete(deviceId);
 
-  pending.ws.send(JSON.stringify({
-    type: 'auth_rejected',
-    payload: { message: '管理员拒绝了你的连接请求' },
-    timestamp: Date.now()
-  }));
+  if (pending.ws.readyState === 1) {
+    pending.ws.send(JSON.stringify({
+      type: 'auth_rejected',
+      payload: { message: '管理员拒绝了你的连接请求' },
+      timestamp: Date.now()
+    }));
+  }
 
   pending.ws.close();
+  broadcastToAuthorized({
+    type: 'pending_device_removed',
+    payload: { deviceId },
+    timestamp: Date.now()
+  });
   return true;
 }
 
 function getPendingDevices() {
-  return pendingDevices.map(d => ({
+  cleanupPendingDevices();
+  return Array.from(pendingDevices.values()).map(d => ({
     deviceId: d.deviceId,
     name: d.name,
     platform: d.platform,
     ipAddress: d.ipAddress,
-    requestedAt: Date.now()
+    requestedAt: d.requestedAt
   }));
 }
 

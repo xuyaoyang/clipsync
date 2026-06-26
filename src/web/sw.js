@@ -1,5 +1,5 @@
 // ClipSync Service Worker — PWA 离线支持
-const CACHE_NAME = 'clipsync-v28';
+const CACHE_NAME = 'clipsync-v29';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -50,9 +50,9 @@ self.addEventListener('message', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // API 请求：网络优先，失败时使用缓存
+  // API 请求：只走网络，不缓存动态数据
   if (url.pathname.startsWith('/api/')) {
-    event.respondWith(networkFirst(event.request));
+    event.respondWith(apiNetworkOnly(event.request));
     return;
   }
 
@@ -66,7 +66,19 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(cacheFirst(event.request));
 });
 
-// 网络优先策略（API）
+// API 不返回旧缓存，避免内容列表、设备列表或文件下载过期
+async function apiNetworkOnly(request) {
+  try {
+    return await fetch(request);
+  } catch (e) {
+    return new Response(JSON.stringify({ error: { code: 'OFFLINE', message: '无法连接到服务器' } }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// 网络优先策略（静态 HTML/JS）
 async function networkFirst(request) {
   try {
     const response = await fetch(request);

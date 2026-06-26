@@ -26,7 +26,6 @@ const UI = (() => {
       fileName: item.file_name || item.fileName,
       fileSize: item.file_size || item.fileSize,
       mimeType: item.mime_type || item.mimeType,
-      filePath: item.file_path || item.filePath,
       createdAt: item.created_at || item.createdAt,
       expiresAt: item.expires_at || item.expiresAt,
       sourceDevice: item.source_device || item.sourceDevice
@@ -216,7 +215,11 @@ const UI = (() => {
         const url = API.getFileURL(id);
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:pointer;';
-        overlay.innerHTML = '<img src="' + url + '" style="max-width:90%;max-height:90%;border-radius:4px;">';
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = '图片预览';
+        img.style.cssText = 'max-width:90%;max-height:90%;border-radius:4px;';
+        overlay.appendChild(img);
         overlay.addEventListener('click', () => overlay.remove());
         document.body.appendChild(overlay);
       });
@@ -264,7 +267,12 @@ const UI = (() => {
 
   // 更新状态栏
   function updateServerStatus(text) {
-    if (els.serverStatus) els.serverStatus.innerHTML = '<span class="status-dot"></span> ' + text;
+    if (!els.serverStatus) return;
+    els.serverStatus.replaceChildren();
+    const dot = document.createElement('span');
+    dot.className = 'status-dot';
+    els.serverStatus.appendChild(dot);
+    els.serverStatus.appendChild(document.createTextNode(' ' + text));
   }
 
   function updateDeviceCount(count) {

@@ -12,7 +12,6 @@ function mapRow(row) {
     fileName: row.file_name,
     fileSize: row.file_size,
     mimeType: row.mime_type,
-    filePath: row.file_path,
     createdAt: row.created_at,
     expiresAt: row.expires_at,
     sourceDevice: row.source_device
@@ -45,6 +44,12 @@ function create({ type, content, fileName, fileSize, mimeType, filePath, sourceD
 function getById(id) {
   const db = getDB();
   return mapRow(db.prepare('SELECT * FROM items WHERE id = ? AND expires_at > ?').get(id, Date.now()));
+}
+
+// 获取带内部文件路径的内容，仅供服务端下载/清理使用
+function getFileById(id) {
+  const db = getDB();
+  return db.prepare('SELECT * FROM items WHERE id = ? AND expires_at > ?').get(id, Date.now());
 }
 
 // 获取内容列表
@@ -114,4 +119,4 @@ function getChanges(since) {
   return { newItems: mapRows(newItems), serverTime: now };
 }
 
-module.exports = { create, getById, getList, remove, getChanges };
+module.exports = { create, getById, getFileById, getList, remove, getChanges };

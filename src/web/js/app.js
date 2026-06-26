@@ -208,6 +208,10 @@ const App = (() => {
       DeviceManager.onPendingDevice(data);
     });
 
+    WSClient.on('pending_device_removed', (data) => {
+      DeviceManager.onPendingDeviceRemoved(data.deviceId);
+    });
+
     // 设备上线/下线
     WSClient.on('device_online', () => {
       loadItems();
@@ -421,11 +425,8 @@ const App = (() => {
     btnOpenFolder && btnOpenFolder.addEventListener('click', async () => {
       try {
         // Electron 环境：通过主进程 IPC 打开（有 GUI 上下文，窗口正常置顶）
-        if (window.clipSync && window.clipSync.openFolder) {
-          const result = await API.openFolder(); // 先获取文件夹路径
-          if (result && result.path) {
-            await window.clipSync.openFolder(result.path);
-          }
+        if (window.clipSync && window.clipSync.openUploadFolder) {
+          await window.clipSync.openUploadFolder();
         } else {
           await API.openFolder();
         }
@@ -443,13 +444,26 @@ const App = (() => {
 
     btnQRCode && btnQRCode.addEventListener('click', async () => {
       // 加载二维码
+      const qrSvg = document.getElementById('qrSvg');
+      const qrUrl = document.getElementById('qrUrl');
       try {
         const data = await API.requestQRCode();
-        document.getElementById('qrSvg').innerHTML = data.svg;
-        document.getElementById('qrUrl').textContent = data.url;
+        qrSvg.replaceChildren();
+        const doc = new DOMParser().parseFromString(data.svg, 'image/svg+xml');
+        const svg = doc.documentElement;
+        if (svg && svg.nodeName.toLowerCase() === 'svg') {
+          qrSvg.appendChild(document.importNode(svg, true));
+        } else {
+          throw new Error('二维码格式无效');
+        }
+        qrUrl.textContent = data.url;
       } catch (e) {
-        document.getElementById('qrSvg').innerHTML = '<p style="color:red;">加载失败</p>';
-        document.getElementById('qrUrl').textContent = '请检查服务是否启动';
+        qrSvg.replaceChildren();
+        const error = document.createElement('p');
+        error.style.color = 'red';
+        error.textContent = '加载失败';
+        qrSvg.appendChild(error);
+        qrUrl.textContent = '请检查服务是否启动';
       }
       qrOverlay.hidden = false;
       qrDialog.hidden = false;

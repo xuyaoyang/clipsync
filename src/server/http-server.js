@@ -30,6 +30,39 @@ function fixFileNameEncoding(fileName) {
   return fileName;
 }
 
+function isLocalRequest(req) {
+  return req.ip === '127.0.0.1' ||
+    req.ip === '::1' ||
+    req.ip === '::ffff:127.0.0.1';
+}
+
+function getRequestToken(req) {
+  const auth = req.headers['authorization'] || '';
+  if (auth.startsWith('Bearer ')) return auth.slice(7);
+  if (req.query && req.query.token) return String(req.query.token);
+  return null;
+}
+
+function sanitizeUploadFileName(fileName) {
+  const raw = path.basename(fixFileNameEncoding(fileName) || 'untitled');
+  const cleaned = raw.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim();
+  return cleaned || 'untitled';
+}
+
+function resolveUniqueFilePath(dir, fileName) {
+  let filePath = path.join(dir, fileName);
+  let counter = 1;
+  const ext = path.extname(fileName);
+  const base = path.basename(fileName, ext);
+
+  while (fs.existsSync(filePath)) {
+    filePath = path.join(dir, `${base} (${counter})${ext}`);
+    counter++;
+  }
+
+  return filePath;
+}
+
 function createApp(uploadDir) {
   app = express();
 
@@ -39,15 +72,17 @@ function createApp(uploadDir) {
   // API 鉴权 + 加解密中间件
   app.use('/api', (req, res, next) => {
     // 公开路由
-    if (req.path === '/status' || req.path === '/qrcode' || req.path.endsWith('/file')) {
+    if (req.path === '/status' || req.path === '/qrcode') {
       return next();
     }
 
+    if (req.path === '/open-folder' && !isLocalRequest(req)) {
+      return res.status(403).json({ error: { code: 'FORBIDDEN', message: '仅桌面端可打开文件夹' } });
+    }
+
     // 本地连接直接放行（Electron / 本机浏览器）
-    const isLocal = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
-    if (!isLocal) {
-      const auth = req.headers['authorization'] || '';
-      const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    if (!isLocalRequest(req)) {
+      const token = getRequestToken(req);
       if (!token || !devicesDB.isValidToken(token)) {
         return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: '未授权的设备，请等待管理员审批' } });
       }
@@ -84,8 +119,18 @@ function createApp(uploadDir) {
   }
 
   // Multipart 文件上传（支持大文件）
+  const tempUploadDir = path.join(uploadDir, '.tmp');
   const upload = multer({
-    storage: multer.memoryStorage(),
+    storage: multer.diskStorage({
+      destination: (req, file, cb) => {
+        fs.mkdirSync(tempUploadDir, { recursive: true });
+        cb(null, tempUploadDir);
+      },
+      filename: (req, file, cb) => {
+        const unique = Date.now() + '-' + Math.random().toString(16).slice(2);
+        cb(null, unique + '.upload');
+      }
+    }),
     limits: { fileSize: 500 * 1024 * 1024 }  // 500MB
   });
 
@@ -166,8 +211,7 @@ function createApp(uploadDir) {
 
         const sourceDevice = req.body.sourceDevice || '未知设备';
         const mimeType = file.mimetype || 'application/octet-stream';
-        const buffer = file.buffer;
-        const fileName = fixFileNameEncoding(file.originalname) || 'untitled';
+        const fileName = sanitizeUploadFileName(file.originalname);
 
         // 确定类型（白名单：只将浏览器可渲染的图片归为 image）
         const RENDERABLE_IMAGE = ['image/jpeg','image/png','image/gif','image/webp','image/bmp','image/svg+xml','image/ico','image/x-icon','image/avif'];
@@ -180,21 +224,14 @@ function createApp(uploadDir) {
         fs.mkdirSync(dateDir, { recursive: true });
 
         // 同名文件加序号，避免覆盖
-        let filePath = path.join(dateDir, fileName);
-        let counter = 1;
-        const ext = path.extname(fileName);
-        const base = path.basename(fileName, ext);
-        while (fs.existsSync(filePath)) {
-          filePath = path.join(dateDir, `${base} (${counter})${ext}`);
-          counter++;
-        }
-        fs.writeFileSync(filePath, buffer);
+        const filePath = resolveUniqueFilePath(dateDir, fileName);
+        fs.renameSync(file.path, filePath);
 
         const item = itemsDB.create({
           type,
           content: null,
           fileName: fileName,
-          fileSize: buffer.length,
+          fileSize: file.size,
           mimeType: mimeType,
           filePath,
           sourceDevice: sourceDevice
@@ -203,6 +240,9 @@ function createApp(uploadDir) {
         app.emit('new-item', item);
         res.status(201).json(item);
       } catch (e) {
+        if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+          try { fs.unlinkSync(req.file.path); } catch (unlinkErr) { /* ignore */ }
+        }
         console.error('[API] 上传失败:', e);
         res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: e.message } });
       }
@@ -225,21 +265,21 @@ function createApp(uploadDir) {
   // 下载文件
   app.get('/api/items/:id/file', (req, res) => {
     try {
-      const item = itemsDB.getById(req.params.id);
-      if (!item || !item.filePath) {
+      const item = itemsDB.getFileById(req.params.id);
+      if (!item || !item.file_path) {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: '文件不存在或已过期' } });
       }
-      if (!fs.existsSync(item.filePath)) {
+      if (!fs.existsSync(item.file_path)) {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: '文件已被清理' } });
       }
-      res.setHeader('Content-Type', item.mimeType || 'application/octet-stream');
-      const fname = item.fileName;
+      res.setHeader('Content-Type', item.mime_type || 'application/octet-stream');
+      const fname = item.file_name;
       if (/^[\x00-\x7F]*$/.test(fname)) {
         res.setHeader('Content-Disposition', `inline; filename="${fname}"`);
       } else {
         res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(fname)}`);
       }
-      fs.createReadStream(item.filePath).pipe(res);
+      fs.createReadStream(item.file_path).pipe(res);
     } catch (e) {
       res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: e.message } });
     }
@@ -336,6 +376,10 @@ function createApp(uploadDir) {
   // 打开文件存储目录（Windows 资源管理器）
   app.post('/api/open-folder', (req, res) => {
     try {
+      if (!isLocalRequest(req)) {
+        return res.status(403).json({ error: { code: 'FORBIDDEN', message: '仅桌面端可打开文件夹' } });
+      }
+
       const { spawn } = require('child_process');
       const folderPath = uploadDir;
       let cmd, args;

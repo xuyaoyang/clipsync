@@ -46,7 +46,11 @@ function removeDevice(id) {
 // 获取所有已授权设备
 function getAllDevices() {
   const db = getDB();
-  return db.prepare('SELECT * FROM authorized_devices ORDER BY last_seen_at DESC').all();
+  return db.prepare(`
+    SELECT id, name, platform, authorized_at, last_seen_at
+    FROM authorized_devices
+    ORDER BY last_seen_at DESC
+  `).all();
 }
 
 // 更新设备最后在线时间

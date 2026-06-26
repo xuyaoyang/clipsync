@@ -10,7 +10,7 @@ interface ClipItem {
   fileName: string | null;   // 原始文件名
   fileSize: number | null;   // 文件大小（字节）
   mimeType: string | null;   // MIME 类型，如 "image/png"
-  filePath: string | null;   // 服务器端文件存储路径
+  filePath: string | null;   // 服务器端内部字段，不通过 API/WebSocket 返回
   createdAt: number;    // 创建时间戳（毫秒）
   expiresAt: number;    // 过期时间戳 = createdAt + 86400000
   sourceDevice: string; // 来源设备 ID
@@ -124,6 +124,7 @@ interface PendingDevice {
 - 保留原始文件名
 - 24 小时过期时连同目录一起删除
 - 文件路径存储在 `items.file_path` 字段
+- `items.file_path` 仅供服务端下载和清理使用，不暴露给前端 API 或 WebSocket 消息
 
 ### 目录示例
 

@@ -2,6 +2,7 @@
 const DeviceManager = (() => {
   let pendingCount = 0;
   let currentPendingDevice = null; // 当前弹窗显示的待审批设备
+  const pendingDeviceIds = new Set();
 
   function init() {
     bindEvents();
@@ -156,6 +157,8 @@ const DeviceManager = (() => {
     try {
       const data = await API.getPendingDevices();
       pendingCount = data.pending ? data.pending.length : 0;
+      pendingDeviceIds.clear();
+      (data.pending || []).forEach(d => pendingDeviceIds.add(d.deviceId));
       updateBadge();
 
       if (pendingCount > 0) {
@@ -190,10 +193,24 @@ const DeviceManager = (() => {
 
   // 收到 WebSocket 新待审批设备通知
   function onPendingDevice(device) {
-    pendingCount++;
+    if (!pendingDeviceIds.has(device.deviceId)) {
+      pendingDeviceIds.add(device.deviceId);
+      pendingCount++;
+    }
     updateBadge();
     // 显示审批弹窗
     showApproval(device);
+  }
+
+  function onPendingDeviceRemoved(deviceId) {
+    if (pendingDeviceIds.delete(deviceId)) {
+      pendingCount = Math.max(0, pendingCount - 1);
+      updateBadge();
+    }
+    if (currentPendingDevice && currentPendingDevice.deviceId === deviceId) {
+      closeApproval();
+    }
+    loadPending();
   }
 
   // 显示审批弹窗
@@ -228,6 +245,7 @@ const DeviceManager = (() => {
     try {
       await API.approveDevice(deviceId, '', '', 'approve');
       UI.showToast('设备已批准');
+      pendingDeviceIds.delete(deviceId);
       pendingCount = Math.max(0, pendingCount - 1);
       updateBadge();
       loadPending();
@@ -241,6 +259,7 @@ const DeviceManager = (() => {
     try {
       await API.approveDevice(deviceId, '', '', 'reject');
       UI.showToast('设备已拒绝');
+      pendingDeviceIds.delete(deviceId);
       pendingCount = Math.max(0, pendingCount - 1);
       updateBadge();
       loadPending();
@@ -276,5 +295,5 @@ const DeviceManager = (() => {
     return Math.floor(diff / 86400000) + ' 天前';
   }
 
-  return { init, onPendingDevice, loadAuthorized, loadPending };
+  return { init, onPendingDevice, onPendingDeviceRemoved, loadAuthorized, loadPending };
 })();

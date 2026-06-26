@@ -29,7 +29,7 @@ contextBridge.exposeInMainWorld('clipSync', {
   // 应用控制
   minimizeToTray: () => ipcRenderer.send('minimize-to-tray'),
   quit: () => ipcRenderer.send('quit-app'),
-  openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
+  openUploadFolder: () => ipcRenderer.invoke('open-upload-folder'),
 
   // 接收主进程消息
   onServerStatus: (callback) => {

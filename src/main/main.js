@@ -6,6 +6,7 @@ const path = require('path');
 let mainWindow = null;
 let serverPort = 9527;
 let isQuitting = false;
+let uploadDir = null;
 
 const isDev = process.argv.includes('--dev');
 const startHidden = process.argv.includes('--hidden');
@@ -176,9 +177,10 @@ function createWindow() {
   });
 }
 
-// IPC：用 Electron 主进程打开文件夹（有 GUI 上下文，窗口正常置顶）
-ipcMain.handle('open-folder', async (event, folderPath) => {
-  const err = await shell.openPath(folderPath);
+// IPC：打开固定上传目录，不接受渲染进程传入任意路径
+ipcMain.handle('open-upload-folder', async () => {
+  if (!uploadDir) throw new Error('上传目录尚未初始化');
+  const err = await shell.openPath(uploadDir);
   if (err) throw new Error(err);
   return true;
 });
@@ -187,18 +189,20 @@ ipcMain.handle('open-folder', async (event, folderPath) => {
 app.whenReady().then(async () => {
   // 0. 设置开机自启（默认开启，用户可在 Windows 任务管理器「启动」中禁用）
   app.setLoginItemSettings({
-    openAtLogin: true,
-    // 开发时不传 args，打包后传最小化参数
-    args: process.argv.includes('--dev') ? [] : ['--hidden']
+    // 默认不开启，后续设置界面中再交给用户显式控制
+    openAtLogin: false,
+    args: []
   });
 
   // 1. 先启动后端服务（HTTP + WebSocket + mDNS + SQLite）
   try {
     const server = require('../server/index');
+    const dataDir = app.isPackaged ? app.getPath('userData') : path.join(__dirname, '..', '..', 'data');
+    uploadDir = path.join(dataDir, 'files');
     const result = await server.init({
       electron: true,
       // 打包后写入用户数据目录，避免安装目录无写入权限导致空白页
-      dataDir: app.isPackaged ? app.getPath('userData') : path.join(__dirname, '..', '..', 'data')
+      dataDir
     });
     if (result) serverPort = result.port;
     console.log('[Main] 后端服务已启动，端口:', serverPort);
