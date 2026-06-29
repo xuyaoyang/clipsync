@@ -2,6 +2,9 @@
 
 ## [Unreleased] — v1.0.0 (开发中)
 
+### 2026-06-29
+- 修复 `start-electron.bat` 在中文路径下启动失败的问题：先规范化项目目录，去除 `%~dp0` 末尾反斜杠后再传给 Electron。
+
 ### 2026-06-26
 - 新增 GitHub 项目 README，补充项目介绍、运行方式、手机连接说明、目录结构和上传前检查。
 - 新增 `.gitignore`，排除 `node_modules/`、`dist/`、`data/` 运行数据和本地临时文件。
